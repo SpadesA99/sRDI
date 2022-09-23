@@ -135,7 +135,6 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 	VIRTUALPROTECT pVirtualProtect = NULL;
 	VIRTUALFREE pVirtualFree = NULL;
 	LOCALFREE pLocalFree = NULL;
-	SLEEP pSleep = NULL;
 	RTLADDFUNCTIONTABLE pRtlAddFunctionTable = NULL;
 
 	//CHAR msg[2] = { 'a','\0' };
@@ -193,20 +192,12 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 	// At a certain length (15ish), the compiler with screw with inline
 	// strings declared as CHAR. No idea why, use BYTE to get around it.
 
-	BYTE sSleep[] = { 'S', 'l', 'e', 'e', 'p' };
 	BYTE sLoadLibrary[] = { 'L', 'o', 'a', 'd', 'L', 'i', 'b', 'r', 'a', 'r', 'y', 'A' };
 	BYTE sVirtualAlloc[] = { 'V', 'i', 'r', 't', 'u', 'a', 'l', 'A', 'l', 'l', 'o', 'c' };
 	BYTE sVirtualProtect[] = { 'V', 'i', 'r', 't', 'u', 'a', 'l', 'P', 'r', 'o', 't', 'e', 'c', 't' };
 	BYTE sFlushInstructionCache[] = { 'F', 'l', 'u', 's', 'h', 'I', 'n', 's', 't', 'r', 'u', 'c', 't', 'i', 'o', 'n', 'C', 'a', 'c', 'h', 'e' };
 	BYTE sGetNativeSystemInfo[] = { 'G', 'e', 't', 'N', 'a', 't', 'i', 'v', 'e', 'S', 'y', 's', 't', 'e', 'm', 'I', 'n', 'f', 'o' };
 	BYTE sRtlAddFunctionTable[] = { 'R', 't', 'l', 'A', 'd', 'd', 'F', 'u', 'n', 'c', 't', 'i', 'o', 'n', 'T', 'a', 'b', 'l', 'e' };
-
-	// Import obfuscation
-	DWORD randSeed;
-	DWORD rand;
-	DWORD sleep;
-	DWORD selection;
-	IMAGE_IMPORT_DESCRIPTOR tempDesc;
 
 	// Relocated base
 	ULONG_PTR baseAddress;
@@ -240,9 +231,6 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 	FILL_STRING_WITH_BUF(aString, sGetNativeSystemInfo);
 	pLdrGetProcAddress(library, &aString, 0, (PVOID*)&pGetNativeSystemInfo);
 
-	FILL_STRING_WITH_BUF(aString, sSleep);
-	pLdrGetProcAddress(library, &aString, 0, (PVOID*)&pSleep);
-
 	FILL_STRING_WITH_BUF(aString, sRtlAddFunctionTable);
 	pLdrGetProcAddress(library, &aString, 0, (PVOID*)&pRtlAddFunctionTable);
 
@@ -252,7 +240,7 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 	//FILL_STRING_WITH_BUF(aString, sMessageBox);
 	//pLdrGetProcAddress(library, &aString, 0, (PVOID*)&pMessageBoxA);
 
-	if (!pVirtualAlloc || !pVirtualProtect || !pSleep ||
+	if (!pVirtualAlloc || !pVirtualProtect ||
 		!pFlushInstructionCache || !pGetNativeSystemInfo) {
 		return 0;
 	}
@@ -333,7 +321,6 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 
 	for (i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++, sectionHeader++) {
 		Memcpy(baseAddress + sectionHeader->VirtualAddress, pbModule + sectionHeader->PointerToRawData, sectionHeader->SizeOfRawData);
-
 	}
 
 	///
@@ -372,7 +359,6 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 	///
 
 	dataDir = &ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-	randSeed = (DWORD)((ULONGLONG)pbModule);
 
 	if (dataDir->Size) {
 
@@ -380,23 +366,6 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 		importCount = 0;
 		for (; importDesc->Name; importDesc++) {
 			importCount++;
-		}
-
-		sleep = 0;
-		importDesc = RVA(PIMAGE_IMPORT_DESCRIPTOR, baseAddress, dataDir->VirtualAddress);
-		if (dwFlags & SRDI_OBFUSCATEIMPORTS && importCount > 1) {
-			sleep = (dwFlags & 0xFFFF0000);
-			sleep = sleep >> 16;
-
-			for (i = 0; i < importCount - 1; i++) {
-				randSeed = (214013 * randSeed + 2531011);
-				rand = (randSeed >> 16) & 0x7FFF;
-				selection = i + rand / (32767 / (importCount - i) + 1);
-
-				tempDesc = importDesc[selection];
-				importDesc[selection] = importDesc[i];
-				importDesc[i] = tempDesc;
-			}
 		}
 
 		importDesc = RVA(PIMAGE_IMPORT_DESCRIPTOR, baseAddress, dataDir->VirtualAddress);
@@ -417,10 +386,6 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 					FILL_STRING(aString, importByName->Name);
 					pLdrGetProcAddress(library, &aString, 0, (PVOID*)&(firstThunk->u1.Function));
 				}
-			}
-
-			if (sleep && dwFlags & SRDI_OBFUSCATEIMPORTS && importCount > 1) {
-				pSleep(sleep * 1000);
 			}
 		}
 	}
