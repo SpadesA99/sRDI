@@ -8,6 +8,9 @@
 #include <winternl.h>
 #include <intrin.h>
 
+#define Memcpy(dst, src, size) __movsb( ( BYTE* ) dst, ( const BYTE* ) src, size )
+#define Memset(dst, val, size) __stosb( ( BYTE* ) dst, val, size)
+
 #define SRDI_CLEARHEADER 0x1
 #define SRDI_CLEARMEMORY 0x2
 #define SRDI_OBFUSCATEIMPORTS 0x4
@@ -315,15 +318,9 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 
 	if (dwFlags & SRDI_CLEARHEADER) {
 		((PIMAGE_DOS_HEADER)baseAddress)->e_lfanew = ((PIMAGE_DOS_HEADER)pbModule)->e_lfanew;
-
-		for (i = ((PIMAGE_DOS_HEADER)pbModule)->e_lfanew; i < ntHeaders->OptionalHeader.SizeOfHeaders; i++) {
-			((PBYTE)baseAddress)[i] = ((PBYTE)pbModule)[i];
-		}
-
+		Memcpy(baseAddress + ((PIMAGE_DOS_HEADER)pbModule)->e_lfanew, pbModule + ((PIMAGE_DOS_HEADER)pbModule)->e_lfanew, ntHeaders->OptionalHeader.SizeOfHeaders - ((PIMAGE_DOS_HEADER)pbModule)->e_lfanew);
 	}else{
-		for (i = 0; i < ntHeaders->OptionalHeader.SizeOfHeaders; i++) {
-			((PBYTE)baseAddress)[i] = ((PBYTE)pbModule)[i];
-		}
+		Memcpy(baseAddress, pbModule, ntHeaders->OptionalHeader.SizeOfHeaders);
 	}
 
 	ntHeaders = RVA(PIMAGE_NT_HEADERS, baseAddress, ((PIMAGE_DOS_HEADER)baseAddress)->e_lfanew);
@@ -335,9 +332,8 @@ ULONG_PTR LoadDLL(PBYTE pbModule, DWORD dwFunctionHash, LPVOID lpUserData, DWORD
 	sectionHeader = IMAGE_FIRST_SECTION(ntHeaders);
 
 	for (i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++, sectionHeader++) {
-		for (c = 0; c < sectionHeader->SizeOfRawData; c++) {
-			((PBYTE)(baseAddress + sectionHeader->VirtualAddress))[c] = ((PBYTE)(pbModule + sectionHeader->PointerToRawData))[c];
-		}
+		Memcpy(baseAddress + sectionHeader->VirtualAddress, pbModule + sectionHeader->PointerToRawData, sectionHeader->SizeOfRawData);
+
 	}
 
 	///
